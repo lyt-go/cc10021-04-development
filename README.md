@@ -69,6 +69,44 @@ npm run dev
 | 主数据实体注册 | `mdm_entity` | 主数据实体 | 实体编号、实体名称、业务域 |
 | 质量趋势看板 | `dq_trend` | 趋势记录 | 记录编号、目标表名、日期 |
 
+## 评分降分依据与日报复查
+
+评分卡记录本身只保存得分，无法说明“这张表为什么降分”。`dq_scorecard` 额外维护
+规则贡献账本（每个评分版本逐条记录权重、结果、规则得分、加权得分、降分贡献），
+并据此生成降分依据视图；日报从该视图读取规则权重与得分生成复查项，不再二次猜测。
+
+页面入口：`/scorecard-deduction`（侧栏“评分降分依据”），演示场景为
+`dws_daily_summary` 的 `DQ_S-1001 / v1`：两条降分规则已确认，第三条（`DQ_R-1005`）
+更正结果尚未到达。
+
+关键约束与对应实现：
+
+| 约束 | 实现 |
+| --- | --- |
+| 同一版本总分按规则权重和结果复算 | `composite_of` = Σ(权重 × 规则得分)，`recompute_version` 校验差异 < 0.05 |
+| 并发修订只接纳同版本贡献 | `accept_correction` 校验 `version` 与 `expected_revision`，版本不符直接拒绝 |
+| 计算中断可恢复 | `start_calculation(stop_after=…)` 写检查点，`resume_calculation` 从检查点续算 |
+| 旧报告引用的版本可重放 | 修订前归档快照，`replay_version(..., revision=)` 按快照复算并核对摘要 |
+| 未齐项单独标明 | 视图返回 `未齐项`，复核项 `未齐=true`，派工与版本确认都会被拦截 |
+| 版本确认回写复核清单 | `confirm_version` 回写 `dq_deduction_review` 的确认结果与状态 |
+| 日报按降分依据生成复查项 | `generate_daily_report` 冻结版本/修订/分项/综合分，逐规则建复查项 |
+| 更正先于派工到达 | `dispatch_review_items` 拒绝过期修订，需先 `rebase_report` 重挂再派工 |
+| 补证据后重开并核对 | `add_evidence` + `reopen_review_items` + `verify_dispatch_basis` 核对分项与综合分 |
+
+相关接口：
+
+```text
+GET  /api/scorecard-scenario
+GET  /api/scorecard/{id}/contribution?version=
+GET  /api/scorecard/{id}/replay?version=&revision=
+GET  /api/scorecard/{id}/verify?version=&expected=
+POST /api/scorecard/{id}/calculation/start | /resume
+POST /api/scorecard/{id}/corrections | /confirm
+POST /api/evidence            GET /api/evidence
+POST /api/daily-report        POST /api/daily-report/{no}/dispatch | /rebase | /reopen
+GET  /api/daily-report/{no}/verify
+```
+
 ## 约定
 
 - 全部模块共享`frontend/src/views/WorkbenchView.vue|tsx`和一套资源路由。

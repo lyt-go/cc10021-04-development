@@ -126,7 +126,8 @@ class DqIncidentService(BaseModuleService):
         related = [i for i in all_incidents if table_name in str(i.get("关联规则", ""))]
 
         if not related:
-            return {"目标表名": table_name, "状态": "无历史事件", "趋势": "平稳"}
+            return {"目标表名": table_name, "状态": "无历史事件", "历史事件总数": 0,
+                    "已修复": 0, "修复率": "N/A", "趋势": "平稳", "趋势方向": "平稳"}
 
         resolved = sum(1 for i in related if i.get("status") in ("已修复", "已关闭"))
         resolution_rate = resolved / len(related) * 100 if related else 0
